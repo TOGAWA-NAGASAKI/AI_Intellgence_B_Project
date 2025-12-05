@@ -3,3 +3,5 @@
 1. Feat: PPO basiclines , DoubleDQN basiclines
 2. Refactor: train.py to train_ppo.py in order to fit the training mode of PPO
 3. Perf: Accelerate the training time by take use of the GPU
+## 12/5/2025 by Aaren Zhao
+Uploaded new things
