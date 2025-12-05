@@ -3,6 +3,7 @@ Score Logger for Reinforcement Learning
 ---------------------------------------
 This utility logs episode scores, computes rolling averages,
 and plots training progress over time.
+自带，不需要修改，完成后的图片在scores文件夹中，如果需要保存将数据和图片重命名即可
 """
 
 import os
@@ -21,7 +22,7 @@ SCORES_PNG_PATH = os.path.join(SCORES_DIR, "scores.png")
 SOLVED_CSV_PATH = os.path.join(SCORES_DIR, "solved.csv")
 SOLVED_PNG_PATH = os.path.join(SCORES_DIR, "solved.png")
 
-AVERAGE_SCORE_TO_SOLVE = 195
+AVERAGE_SCORE_TO_SOLVE = 485
 CONSECUTIVE_RUNS_TO_SOLVE = 100
 
 
@@ -102,7 +103,7 @@ class ScoreLogger:
             )
 
         if show_goal:
-            plt.plot(x, [AVERAGE_SCORE_TO_SOLVE] * len(x), linestyle=":", label="Goal (195 Avg)")
+            plt.plot(x, [AVERAGE_SCORE_TO_SOLVE] * len(x), linestyle=":", label="Goal (485 Avg)")
 
         if show_trend and len(x) > 1:
             if len(x) > 2:

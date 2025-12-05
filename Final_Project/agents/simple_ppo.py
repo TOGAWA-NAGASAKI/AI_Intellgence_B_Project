@@ -3,27 +3,27 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.optimizers import Adam
+import os
 
-GAMMA = 0.99
-LAM = 0.95
-CLIP_RATIO = 0.2
-LR = 0.001
-EPOCHS = 10
-ENTROPY = 0.01
-
+import json
+import pickle
+import pandas as pd
+from datetime import datetime
+import config
 
 class SimplePPO:
     def __init__(self, observation_space, action_space):
         self.observation_space = observation_space
         self.action_space = action_space
+        self.best_score = 0
 
         # Basic parameters are witten in the file config.py, I've trie for several times and it seemly the best.
-        self.gamma = GAMMA
-        self.lam = LAM
-        self.clip_ratio = CLIP_RATIO
-        self.learning_rate = LR
-        self.epochs = EPOCHS
-        self.entropy_coef = ENTROPY
+        self.gamma = config.GAMMA
+        self.lam = config.LAM
+        self.clip_ratio = config.CLIP_RATIO
+        self.learning_rate = config.LR
+        self.epochs = config.EPOCHS
+        self.entropy_coef = config.ENTROPY
 
         self.actor, self.critic = self._build_networks()
         self.old_actor = self._build_networks()[0]
@@ -31,16 +31,16 @@ class SimplePPO:
     def _build_networks(self):
         # it's a simplified networks with RELU , actually you can try tanh.
         actor_input = Input(shape=(self.observation_space,))
-        actor_dense1 = Dense(64, activation='relu')(actor_input)
-        actor_dense2 = Dense(64, activation='relu')(actor_dense1)
+        actor_dense1 = Dense(config.UNITS, activation='relu')(actor_input)
+        actor_dense2 = Dense(config.UNITS, activation='relu')(actor_dense1)
         actor_output = Dense(self.action_space, activation='softmax')(actor_dense2)
 
         actor = Model(inputs=actor_input, outputs=actor_output)
         actor.compile(optimizer=Adam(learning_rate=self.learning_rate))
 
         critic_input = Input(shape=(self.observation_space,))
-        critic_dense1 = Dense(64, activation='relu')(critic_input)
-        critic_dense2 = Dense(64, activation='relu')(critic_dense1)
+        critic_dense1 = Dense(config.UNITS, activation='relu')(critic_input)
+        critic_dense2 = Dense(config.UNITS, activation='relu')(critic_dense1)
         critic_output = Dense(1, activation='linear')(critic_dense2)
 
         critic = Model(inputs=critic_input, outputs=critic_output)
@@ -120,3 +120,32 @@ class SimplePPO:
             critic_losses.append(critic_loss)
 
         return np.mean(actor_losses), np.mean(critic_losses)
+    
+    def save_model(self, filepath, score=None):
+        if score is not None:
+            base_path = f"{filepath}_score_{int(score)}"
+        else:
+            base_path = filepath
+        os.makedirs(os.path.dirname(base_path) if os.path.dirname(base_path) else '.', exist_ok=True)
+        
+        actor_path = f"{base_path}_actor.weights.h5"
+        critic_path = f"{base_path}_critic.weights.h5"
+        old_actor_path = f"{base_path}_old_actor.weights.h5"
+        
+        self.actor.save_weights(actor_path)
+        self.critic.save_weights(critic_path)
+        self.old_actor.save_weights(old_actor_path)
+        
+        print(f"Saved")
+        print(f"   Actor: {actor_path}")
+        print(f"   Critic: {critic_path}")
+    
+    def load_model(self, filepath):
+        actor_path = f"{filepath}_actor.weights.h5"
+        critic_path = f"{filepath}_critic.weights.h5"
+        
+        self.actor.load_weights(actor_path)
+        self.critic.load_weights(critic_path)
+        self.old_actor.load_weights(actor_path)
+        
+        print(f"Loaded: {filepath}")
