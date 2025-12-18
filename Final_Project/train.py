@@ -1,76 +1,178 @@
-"""
-CartPole Training Script (Gymnasium Version)
---------------------------------------------
-Main training loop that runs the CartPole-v1 environment using a DQN agent.
-The training progress is logged and plotted using ScoreLogger.
+""""
+CartPole Training & Evaluation (PyTorch + Gymnasium)
+---------------------------------------------------
+- Trains a DQN agent and logs scores via ScoreLogger (PNG + CSV)
+- Saves model to ./models/cartpole_dqn.torch
+- Evaluates from a saved model (render optional)
+
+Student reading map:
+  1) train(): env loop → agent.act() → env.step() → agent.step() [Encapsulated]
+  2) evaluate(): loads saved model and runs agent.act(evaluation_mode=True)
 """
 
+from __future__ import annotations
+import os
+import time
 import numpy as np
 import gymnasium as gym
-from agents.double_dqn import DoubleDQNSolver
+import torch
+
+from agents.cartpole_dqn import DQNSolver, DQNConfig
 from scores.score_logger import ScoreLogger
 
 ENV_NAME = "CartPole-v1"
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(MODEL_DIR, "cartpole_dqn.torch")
 
 
-def train():
-    # Initialize environment (Gymnasium)
+def train(num_episodes: int = 200, terminal_penalty: bool = True) -> DQNSolver:
+    """
+    Main training loop:
+      - Creates the environment and agent
+      - For each episode:
+          * Reset env → get initial state
+          * Loop: select action, step environment, call agent.step()
+          * Log episode score with ScoreLogger
+      - Saves the trained model to disk
+    """
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
+    # Create CartPole environment (no render during training for speed)
     env = gym.make(ENV_NAME)
-    score_logger = ScoreLogger(ENV_NAME)
+    logger = ScoreLogger(ENV_NAME)
 
-    observation_space = env.observation_space.shape[0]
-    action_space = env.action_space.n
+    # Infer observation/action dimensions from the env spaces
+    obs_dim = env.observation_space.shape[0]
+    act_dim = env.action_space.n
 
-    dqn_solver = DoubleDQNSolver(observation_space, action_space)
+    # Construct agent with default config (students can swap configs here)
+    agent = DQNSolver(obs_dim, act_dim, cfg=DQNConfig())
+    print(f"[Info] Using device: {agent.device}")
 
-    # Train for a fixed number of episodes
-    for run in range(1, 101):  # 100 times
-        state, info = env.reset(seed=run) # reset the environment
-        state = np.reshape(state, [1, observation_space])
-        step = 0
+    # Episode loop
+    for run in range(1, num_episodes + 1):
+        # Gymnasium reset returns (obs, info). Seed for repeatability.
+        state, info = env.reset(seed=run)
+        state = np.reshape(state, (1, obs_dim))
+        steps = 0
 
         while True:
-            step += 1
+            steps += 1
 
-            # Render environment (visualize)
+            # 1. ε-greedy action from the agent (training mode)
+            #    state shape is [1, obs_dim]
+            action = agent.act(state)
 
-            # Select action via epsilon-greedy policy
-            action = dqn_solver.act(state) # ε-greedy
-            next_state, reward, terminated, truncated, info = env.step(action) # update situation
+            # 2. Gymnasium step returns: obs', reward, terminated, truncated, info
+            next_state_raw, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-            # Modify reward for terminal step
-            reward = reward if not done else -reward # punish if not done
+            # 3. Optional small terminal penalty (encourage agent to avoid failure)
+            if terminal_penalty and done:
+                reward = -1.0
+            
+            # 4. Reshape next_state for agent and next loop iteration
+            next_state = np.reshape(next_state_raw, (1, obs_dim))
 
-            # Store experience and update agent
-            next_state = np.reshape(next_state, [1, observation_space])
-            dqn_solver.remember(state, action, reward, next_state, done) # put the experience to buffer
+            # 5. Give (s, a, r, s', done) to the agent, which handles
+            #    remembering and learning internally.
+            agent.step(state, action, reward, next_state, done)
+
+            # 6. Move to next state
             state = next_state
 
-            # If episode ends
+            # 7. Episode end: log and break
             if done:
-                print(f"Run: {run}, Exploration: {dqn_solver.exploration_rate:.4f}, Score: {step}")
-                score_logger.add_score(step, run)
+                print(f"Run: {run}, Epsilon: {agent.exploration_rate:.3f}, Score: {steps}")
+                logger.add_score(steps, run)  # writes CSV + updates score PNG
                 break
 
-            # Learn from past experience
-            dqn_solver.experience_replay()
+    env.close()
+    # Persist the trained model
+    agent.save(MODEL_PATH)
+    print(f"[Train] Model saved to {MODEL_PATH}")
+    return agent
+
+
+def evaluate(model_path: str | None = None,
+             algorithm: str = "dqn",
+             episodes: int = 5,
+             render: bool = True,
+             fps: int = 60):
+    """
+    Evaluate a trained agent in the environment using greedy policy (no ε).
+    - Loads weights from disk
+    - Optionally renders (pygame window)
+    - Reports per-episode steps and average
+
+    Args:
+        model_path: If None, auto-pick the first .torch file under ./models
+        algorithm: Reserved hook if you later support PPO/A2C agents
+        episodes: Number of evaluation episodes
+        render: Whether to show a window; set False for headless CI
+        fps: Target frame-rate during render (sleep-based pacing)
+    """
+    # Resolve model path
+    model_dir = MODEL_DIR
+    if model_path is None:
+        candidates = [f for f in os.listdir(model_dir) if f.endswith(".torch")]
+        if not candidates:
+            raise FileNotFoundError(f"No saved model found in '{model_dir}/'. Please train first.")
+        model_path = os.path.join(model_dir, candidates[0])
+        print(f"[Eval] Using detected model: {model_path}")
+    else:
+        print(f"[Eval] Using provided model: {model_path}")
+
+    # Create env for evaluation; 'human' enables pygame-based rendering
+    render_mode = "human" if render else None
+    env = gym.make(ENV_NAME, render_mode=render_mode)
+    obs_dim = env.observation_space.shape[0]
+    act_dim = env.action_space.n
+
+    # (If you add PPO/A2C later, pick their agent classes by 'algorithm' here.)
+    if algorithm.lower() == "dqn":
+        agent = DQNSolver(obs_dim, act_dim, cfg=DQNConfig())
+    else:
+        raise ValueError(...)
+
+    # Load trained weights
+    agent.load(model_path)
+    print(f"[Eval] Loaded {algorithm.upper()} model from: {model_path}")
+
+    scores = []
+    # Sleep interval to approximate fps; set 0 for fastest evaluation
+    dt = (1.0 / fps) if render and fps else 0.0
+
+    for ep in range(1, episodes + 1):
+        state, _ = env.reset(seed=10_000 + ep)
+        state = np.reshape(state, (1, obs_dim))
+        done = False
+        steps = 0
+
+        while not done:
+            # Greedy action (no exploration) by calling act() in evaluation mode
+            action = agent.act(state, evaluation_mode=True)
+
+            # Step env forward
+            next_state, _, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+            state = np.reshape(next_state, (1, obs_dim))
+            steps += 1
+
+            # Slow down rendering to be watchable
+            if dt > 0:
+                time.sleep(dt)
+
+        scores.append(steps)
+        print(f"[Eval] Episode {ep}: steps={steps}")
 
     env.close()
-    return dqn_solver
+    avg = float(np.mean(scores)) if scores else 0.0
+    print(f"[Eval] Average over {episodes} episodes: {avg:.2f}")
+    return scores
 
-def evaluate(dqn_solver):
-    env = gym.make(ENV_NAME, render_mode="human")
-    state, _ = env.reset()
-    state = np.reshape(state, [1, env.observation_space.shape[0]])
-    done = False
-    while not done:
-        action = np.argmax(dqn_solver.model.predict(state))
-        next_state, _, terminated, truncated, _ = env.step(action)
-        done = terminated or truncated
-        state = np.reshape(next_state, [1, env.observation_space.shape[0]])
-    env.close()
 
 if __name__ == "__main__":
-    Trained_Agent = train()
-    evaluate(Trained_Agent)
+    # Example: quick training then a short evaluation
+    agent = train(num_episodes=1000, terminal_penalty=True)
+    evaluate(model_path="models/cartpole_dqn.torch", algorithm="dqn", episodes=100, render=False, fps=60)
