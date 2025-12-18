@@ -9,7 +9,7 @@ ENV_NAME = "CartPole-v1"
 OUTPUT_DIR = "data"
 # 假设你已经训练好了一个PPO模型，在这里填入它的路径 (不要带后缀)
 # 例如: checkpoints/checkpoint_episode_250_score_500
-MODEL_PATH = "Final_Project/checkpoints/best_model_score_500" 
+MODEL_PATH = "checkpoints/best_model_score_500" 
 SAMPLES_TO_COLLECT = 5000  # 收集多少个 (state, action) 对
 
 def generate_dataset():
@@ -21,10 +21,24 @@ def generate_dataset():
     agent = SimplePPO(env.observation_space.shape[0], env.action_space.n)
     
     # 尝试加载模型，如果没有模型文件，生成的将是随机数据（即“菜鸟”数据）
+        # 尝试加载模型，如果没有模型文件，生成的将是随机数据（即“菜鸟”数据）
+    actor_path = MODEL_PATH + "_actor.weights.h5"
+    critic_path = MODEL_PATH + "_critic.weights.h5"
+    print(f"Looking for actor model at: {actor_path}")
+    print(f"Looking for critic model at: {critic_path}")
+    if os.path.exists(actor_path) and os.path.exists(critic_path):
+        print("Found both model files.")
+    else:
+        if not os.path.exists(actor_path):
+            print(f"Actor model file not found at: {actor_path}")
+        if not os.path.exists(critic_path):
+            print(f"Critic model file not found at: {critic_path}")
+
     try:
         agent.load_model(MODEL_PATH)
         print(f"Loaded expert model from {MODEL_PATH}")
-    except:
+    except Exception as e:
+        print(f"Error loading model: {e}")
         print(f"Warning: Model not found at {MODEL_PATH}. Generating RANDOM data!")
 
     observations = []
@@ -79,4 +93,6 @@ def generate_dataset():
     env.close()
 
 if __name__ == "__main__":
+    
+    print("Current working directory:", os.getcwd())
     generate_dataset()
