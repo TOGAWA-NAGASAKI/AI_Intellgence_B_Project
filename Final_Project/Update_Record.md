@@ -4,4 +4,9 @@
 2. Refactor: train.py to train_ppo.py in order to fit the training mode of PPO
 3. Perf: Accelerate the training time by take use of the GPU
 ## 12/5/2025 by Aaren Zhao
-Uploaded new things
+Uploaded new methods
+## 19/12/2025 by Aaren Zhao
+Adjusted the parameters of DDQN
+Systemized models to one folder
+Created result_for_report folder
+Set up model_evaluation folder and remain undone

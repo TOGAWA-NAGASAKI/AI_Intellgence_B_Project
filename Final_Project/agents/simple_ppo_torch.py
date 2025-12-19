@@ -187,7 +187,7 @@ class SimplePPO:
     
     def save_model(self, filepath, score=None):
         if score is not None:
-            base_path = f"{filepath}_score_{int(score)}"
+            base_path = f"{filepath}_ppotorch_score_{int(score)}"
         else:
             base_path = filepath
         os.makedirs(os.path.dirname(base_path) if os.path.dirname(base_path) else '.', exist_ok=True)

@@ -128,9 +128,9 @@ class SimplePPO:
             base_path = filepath
         os.makedirs(os.path.dirname(base_path) if os.path.dirname(base_path) else '.', exist_ok=True)
         
-        actor_path = f"{base_path}_actor.weights.h5"
-        critic_path = f"{base_path}_critic.weights.h5"
-        old_actor_path = f"{base_path}_old_actor.weights.h5"
+        actor_path = f"{base_path}_ppo_actor.weights.h5"
+        critic_path = f"{base_path}_ppo_critic.weights.h5"
+        old_actor_path = f"{base_path}_ppo_old_actor.weights.h5"
         
         self.actor.save_weights(actor_path)
         self.critic.save_weights(critic_path)

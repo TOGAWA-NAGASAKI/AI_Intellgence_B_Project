@@ -5,18 +5,23 @@ import numpy as np
 import random
 from collections import deque
 import config
-
 class QNetwork(nn.Module):
-    def __init__(self, obs_dim, act_dim, units: int):
+    def __init__(self, obs_dim, act_dim, units: int, dropout_rate: float = 0.1):
         super(QNetwork, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(obs_dim, units),
+            nn.LayerNorm(units),
             nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
             nn.Linear(units, units),
+            nn.LayerNorm(units),
             nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
             nn.Linear(units, act_dim)
         )
-
+  
     def forward(self, x):
         return self.fc(x)
 
@@ -56,13 +61,14 @@ class DoubleDQNAgent:
         
         if len(self.memory) >= config.BATCH_SIZE:
             self._learn()
-
+            
         self.exploration_rate = max(config.EXPLORATION_MIN, self.exploration_rate * config.EXPLORATION_DECAY)
 
         self.step_count += 1
         if self.step_count % config.TARGET_UPDATE_FREQ == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
+        self.exploration_rate = max(config.EXPLORATION_MIN, self.exploration_rate * config.EXPLORATION_DECAY)
     def _learn(self):
         batch = random.sample(self.memory, config.BATCH_SIZE)
         states, actions, rewards, next_states, dones = zip(*batch)
@@ -83,8 +89,6 @@ class DoubleDQNAgent:
         loss = self.loss_fn(current_q, target_q)
         self.optimizer.zero_grad()
         loss.backward()
-        #防止梯度爆炸导致模型崩盘
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
         self.optimizer.step()
 
     def save(self, path: str):

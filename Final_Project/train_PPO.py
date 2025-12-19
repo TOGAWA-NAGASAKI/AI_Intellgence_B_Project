@@ -61,8 +61,10 @@ def train_ppo():
         # Mark down like a notebook, in order to speed up and simplify, I choose to sum up the Actor Loss once 10 eps.
 
         score = len(episode_rewards)
-        if score > best_score:
+        if score >= best_score:
             best_score = score
+            if best_score >= 485:
+                agent.save_model("Final_Project/models", score=best_score)
 
         if episode % 10 == 0:
             print(f"Ep: {episode:4d}, Score: {score:3d}, Best: {best_score:3d}")
