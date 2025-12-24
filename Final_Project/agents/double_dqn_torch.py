@@ -6,19 +6,16 @@ import random
 from collections import deque
 import config
 class QNetwork(nn.Module):
-    def __init__(self, obs_dim, act_dim, units: int, dropout_rate: float = 0.1):
+    def __init__(self, obs_dim, act_dim, units: int):
         super(QNetwork, self).__init__()
         self.fc = nn.Sequential(
+            nn.Sigmoid(),
             nn.Linear(obs_dim, units),
-            nn.LayerNorm(units),
+            #nn.LayerNorm(units),
             nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            
             nn.Linear(units, units),
-            nn.LayerNorm(units),
+            #nn.LayerNorm(units),
             nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            
             nn.Linear(units, act_dim)
         )
   

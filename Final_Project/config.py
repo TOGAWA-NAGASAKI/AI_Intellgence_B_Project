@@ -1,13 +1,13 @@
 # DDQN Hyperparameters
-DQNGAMMA = 0.998  # 折扣因子 γ
-LEARNING_RATE = 0.0001  # 学习率，可以调整0.001/0.0001/0.0005/0.005/0.0003
-MEMORY_SIZE = 200000  # 记忆缓冲区大小
-BATCH_SIZE = 64  # 最小一组数据个数
+DQNGAMMA = 0.99  # 折扣因子 γ
+LEARNING_RATE = 0.005  # 学习率，可以调整0.001/0.0001/0.0005/0.005/0.0003
+MEMORY_SIZE = 50000  # 记忆缓冲区大小
+BATCH_SIZE = 32  # 最小一组数据个数
 EXPLORATION_MAX = 1.0  # 最大探索率
-EXPLORATION_MIN = 0.001  # 最小探索率
-EXPLORATION_DECAY = 0.9999  # 探索率下降，可以调整 0.998-0.9995-0.9993
-DQNUNITS = 128 # 神经元数量，调少了速度快但需要更多训练时间，很推荐调整看看
-TARGET_UPDATE_FREQ = 2000
+EXPLORATION_MIN = 0.05 # 最小探索率
+EXPLORATION_DECAY = 0.995  # 探索率下降，可以调整 0.998-0.9995-0.9993
+DQNUNITS = 512 # 神经元数量，调少了速度快但需要更多训练时间，很推荐调整看看
+TARGET_UPDATE_FREQ = 1000
 
 # PPO Hyperparameters
 GAMMA = 0.99 #伽马参数0.99-0.95
@@ -17,6 +17,10 @@ LR = 0.001 #learning rate 学习率，可以尝试做调整0.001-0.0005-0.005
 EPOCHS = 10 # 一组个数，不用调整
 ENTROPY = 0.01 # 学习熵，如果要进一步做可以调整
 UNITS = 64 # 神经元数量，调少了速度快但需要更多训练时间，很推荐调整看看64-32-128
+
+# GRPO Hyperparameters
+GRPO_GROUP_SIZE = 8
+GRPO_TEMPERATURE = 0.1
 
 HIDDEN_UNITS = 128     # 神经元数量
 NUM_LAYERS = 3         # 隐藏层+输出前的层数

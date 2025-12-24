@@ -41,7 +41,7 @@ INITIAL_EXPLORATION_STEPS = 1_000
 # ε schedule: start, final, multiplicative decay per update step
 EPS_START = 1.0
 EPS_END = 0.05
-EPS_DECAY = 0.995#0.995
+EPS_DECAY = 0.9#0.995
 # How often (in steps) to hard-copy online -> target network
 TARGET_UPDATE_STEPS = 500#500-1000
 
@@ -247,8 +247,9 @@ class DQNSolver:
 
         # Compute target values using the target network (no gradient)
         with torch.no_grad():
-            q_next = self.target(s2_t).max(dim=1, keepdim=True)[0]  # [B, 1] = max_a' Q_target(s',a')
-            target = r_t + m_t * self.cfg.gamma * q_next            # [B, 1]
+            next_actions = self.online(s2_t).argmax(dim=1, keepdim=True)
+            q_next = self.target(s2_t).gather(1, next_actions)
+            target = r_t + m_t * self.cfg.gamma * q_next
 
         # 4) MSE loss between current Q(s,a) and the target
         loss = nn.functional.mse_loss(q_sa, target)

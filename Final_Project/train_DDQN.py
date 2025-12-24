@@ -7,7 +7,7 @@ The training progress is logged and plotted using ScoreLogger.
 import os
 import numpy as np
 import gymnasium as gym
-from agents.double_dqn_torch import DoubleDQNSolver
+from agents.double_dqn import DoubleDQNSolver
 from scores.score_logger import ScoreLogger
 
 ENV_NAME = "CartPole-v1"

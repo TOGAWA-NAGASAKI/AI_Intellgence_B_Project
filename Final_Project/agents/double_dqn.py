@@ -93,13 +93,13 @@ class DoubleDQNSolver:
 
     def save_weights(self, filepath):
         os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
-        self.model.save_weights(f"{filepath}_model.weights.h5")
-        self.target_model.save_weights(f"{filepath}_target.weights.h5")
+        self.model.save_weights(f"{filepath}_ddqn_model.weights.h5")
+        self.target_model.save_weights(f"{filepath}_ddqn_target.weights.h5")
         print(f"Saved: {filepath}")
     
     def load_weights(self, filepath):
-        self.model.load_weights(f"{filepath}_model.weights.h5")
-        self.target_model.load_weights(f"{filepath}_target.weights.h5")
+        self.model.load_weights(f"{filepath}_ddqn_model.weights.h5")
+        self.target_model.load_weights(f"{filepath}_ddqn_target.weights.h5")
         print(f"Loaded: {filepath}")
     
     def save_checkpoint(self, checkpoint_dir, episode, score=None):
