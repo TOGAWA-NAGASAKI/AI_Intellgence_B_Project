@@ -13,23 +13,22 @@ ENV_NAME = "CartPole-v1"
 MODEL_DIR = "models"
 
 
-# 1. 内部故障故障模拟 
+# 内部故障
 ACTION_NOISE_PROB = 0.0     # 动作噪声 (0.1, 0.15, 0.2)
 
-# 2. 传感器故障模拟 
+# 状态噪声 
 STATE_NOISE_STD = 0.05       # 状态噪声 (0.01, 0.05, 0.1)
 
-# 3. 奖励信号干扰 
+# 奖励干扰 
 REWARD_NOISE_STD = 0.00      # 奖励噪声  (0.1, 0.5, 1.0)
 SPARSE_REWARD = False       # 稀疏奖励 (True)
 
-# 4. 外部物理攻击 
-ADVERSARIAL_ATTACK = False   # True开启 (对抗性推力)
+# 外部攻击 
+ADVERSARIAL_ATTACK = False   # True开启
 ATTACK_INTERVAL = 150       # 每隔多少步攻击一次
 ATTACK_FORCE = 1.0          # 攻击强度
 
 def train_ppo_robust():
-    #自动生成日志后缀
     suffix = ""
     if ACTION_NOISE_PROB > 0: suffix += f"_ActNoise_{ACTION_NOISE_PROB}"
     if STATE_NOISE_STD > 0: suffix += f"_StateNoise_{STATE_NOISE_STD}"
@@ -42,7 +41,7 @@ def train_ppo_robust():
     logger_name = f"{ENV_NAME}_PPO{suffix}"
     score_logger = ScoreLogger(logger_name)
     
-    print(f"--- 启动 PPO 训练: {logger_name} ---")
+    print(f" 启动 PPO 训练: {logger_name} ")
     print(f"干扰设置: 动作噪声={ACTION_NOISE_PROB}, 状态噪声={STATE_NOISE_STD}, 奖励噪声={REWARD_NOISE_STD}, 稀疏奖励={SPARSE_REWARD}, 对抗攻击={ADVERSARIAL_ATTACK}")
 
     env = gym.make(ENV_NAME)
@@ -57,7 +56,6 @@ def train_ppo_robust():
     for episode in range(1, config.TOTAL_EPISODES + 1):
         state, _ = env.reset()
         
-        # 初始状态噪声
         if STATE_NOISE_STD > 0:
             state += np.random.normal(0, STATE_NOISE_STD, state.shape)
             
@@ -65,7 +63,7 @@ def train_ppo_robust():
         step = 0
         
         while step < 500:
-            # Agent基于(可能带有噪声的)状态做出决策
+            # Agent基于状态做出决策
             intended_action, prob = agent.act(state)
             
             # 动作干扰
@@ -106,7 +104,7 @@ def train_ppo_robust():
                 else:
                     reward = 100 if step >= 490 else -1        
 
-            # 存储经验
+            # 存储
             episode_states.append(state)
             episode_actions.append(real_action)
             episode_rewards.append(reward)
@@ -116,9 +114,8 @@ def train_ppo_robust():
             step += 1
             if done: break
 
-        # --- 训练逻辑 ---
+        #训练逻辑
         if len(episode_states) > 0:
-            # 多练几轮
             is_hard_mode = (STATE_NOISE_STD > 0 or ADVERSARIAL_ATTACK or REWARD_NOISE_STD > 0 or SPARSE_REWARD)
             train_loops = 3 if is_hard_mode else 1
             
@@ -140,3 +137,4 @@ def train_ppo_robust():
 
 if __name__ == "__main__":
     train_ppo_robust()
+
