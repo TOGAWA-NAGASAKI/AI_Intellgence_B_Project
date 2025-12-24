@@ -4,147 +4,201 @@ import os
 import time
 import matplotlib.pyplot as plt
 import torch
-from torch.utils.data import TensorDataset, DataLoader
-from agents.behavioral_cloning import BehavioralCloningAgent
 
-# === 配置 ===
+# 导入 PPO (作为专家，用于生成数据)
+from agents.simple_ppo_torch import SimplePPO
+# 导入 BC (作为学生)
+from agents.behavioral_cloning import BCAgent, BCConfig
+
 ENV_NAME = "CartPole-v1"
-DATA_FILE = "data/expert_data_n5000.npz" # 确保文件名和你生成的一致
-MODEL_PATH = "models/bc_agent_torch.pth"
-BATCH_SIZE = 32
-EPOCHS = 50
 
-# 测试配置 (极速模式)
-TEST_NUM_ENVS = 10      # 同时开10个环境
-TEST_EPISODES = 100     # 总共测100局
+EXPERT_MODEL_PATH = r"Final_Project\models\best_ppo_ppotorch_score_500.pth"
 
-def train_and_evaluate():
-    # 1. 加载数据
-    if not os.path.exists(DATA_FILE):
-        print(f"Error: {DATA_FILE} not found!")
+
+DATA_NUM_SAMPLES = 5000  # 足够多的样本
+BC_EPOCHS = 50          # 训练轮数
+EVAL_EPISODES = 5       # 每个 Epoch 评估的局数
+PLOT_SAVE_PATH = "scores/bc_training_progress_graph.png"
+MODEL_SAVE_PATH = "models/bc_trained_model.pth"
+GOAL_SCORE = 475        # 目标分数线
+
+
+# --- 可视化器类 ---
+class TrainingVisualizer:
+    def __init__(self, save_path):
+        self.epochs = []
+        self.scores = []
+        self.save_path = save_path
+        self.goal = GOAL_SCORE 
+
+    def update(self, epoch, score):
+        self.epochs.append(epoch)
+        self.scores.append(score)
+
+    def save_plot(self):
+        if not self.scores:
+            return
+
+        plt.figure(figsize=(10, 6))
+        
+        # 绘制原始分数 
+        plt.plot(self.epochs, self.scores, label='Score per Epoch', color='#1f77b4', alpha=0.9)
+        
+        # 计算并绘制最近 10 局平均分 (Average of last 10) 
+      
+        moving_avgs = []
+        target_window = 10  
+        window_size = min(target_window, len(self.scores)) # 窗口大小不超过当前已有的分数数量
+        
+        for i in range(len(self.scores)):
+            start_idx = max(0, i - window_size + 1)
+            subset = self.scores[start_idx : i + 1]
+            moving_avgs.append(np.mean(subset))
+            
+        plt.plot(self.epochs, moving_avgs, label=f'Average of last {target_window}', 
+                 color='#ff7f0e', linestyle='--', linewidth=2)
+
+        # 3. 绘制目标线 (绿色点线)
+        plt.axhline(y=self.goal, color='green', linestyle=':', label=f'Goal ({self.goal} Avg)', alpha=0.8)
+
+        # 4. 绘制趋势线 (红色点划线)
+        if len(self.epochs) > 1:
+            z = np.polyfit(self.epochs, self.scores, 1)
+            p = np.poly1d(z)
+            plt.plot(self.epochs, p(self.epochs), "r-.", label='Trend', linewidth=1.5)
+
+        plt.title(f"{ENV_NAME} - Behavioral Cloning Training Progress")
+        plt.xlabel("Training Epochs")
+        plt.ylabel("Evaluation Score")
+        plt.legend(loc='upper left')
+        plt.grid(True, alpha=0.3)
+        plt.ylim(0, 520) 
+        
+        if not os.path.exists(os.path.dirname(self.save_path)):
+            os.makedirs(os.path.dirname(self.save_path))
+        plt.savefig(self.save_path)
+        plt.close()
+
+# --- 数据生成函数 ---
+def generate_expert_data(expert_agent, env, num_samples):
+    states = []
+    actions = []
+    
+    obs, _ = env.reset(seed=int(time.time()))
+    while len(states) < num_samples:
+        state_t = torch.FloatTensor(obs).unsqueeze(0).to(expert_agent.actor.net[0].weight.device)
+        with torch.no_grad():
+            probs = expert_agent.actor(state_t).cpu().numpy()[0]
+        action = np.argmax(probs)
+        
+        states.append(obs)
+        actions.append(action)
+        
+        obs, _, terminated, truncated, _ = env.step(action)
+        if terminated or truncated:
+            obs, _ = env.reset()
+            
+    return np.array(states), np.array(actions)
+
+# --- 评估函数 ---
+def evaluate_bc_agent(student_agent, env, episodes=EVAL_EPISODES):
+    scores = []
+    for _ in range(episodes):
+        state, _ = env.reset()
+        steps = 0
+        done = False
+        while not done:
+            action = student_agent.act(state, evaluation_mode=True)
+            state, _, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+            steps += 1
+        scores.append(steps)
+    return np.mean(scores)
+
+
+def train_bc_with_visualization():
+    # 检查专家模型
+    if not os.path.exists(EXPERT_MODEL_PATH):
+        print(f"❌ 错误: 找不到专家模型文件: {EXPERT_MODEL_PATH}")
         return
 
-    print(f"Loading data from {DATA_FILE}...")
-    data = np.load(DATA_FILE)
-    states = data['obs']
-    actions = data['actions']
-
-    # 2. 准备 PyTorch DataLoader
-    # 将 Numpy 转换为 TensorDataset
-    tensor_x = torch.FloatTensor(states)
-    tensor_y = torch.LongTensor(actions)
-    dataset = TensorDataset(tensor_x, tensor_y)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-    # 3. 初始化 Agent
+    # 初始化环境和专家
     env = gym.make(ENV_NAME)
-    agent = BehavioralCloningAgent(env.observation_space.shape[0], env.action_space.n)
-
-    # 4. 开始训练
-    print(f"\n=== Starting Training on {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'} ===")
-    if not os.path.exists("models"): os.makedirs("models")
-    if not os.path.exists("scores"): os.makedirs("scores")
-
-    loss_history = []
+    obs_dim = env.observation_space.shape[0]
+    act_dim = env.action_space.n
     
-    for epoch in range(EPOCHS):
+    expert_agent = SimplePPO(obs_dim, act_dim)
+    try:
+        expert_agent.load_model(EXPERT_MODEL_PATH)
+        print(f"🚀 PPO专家模型加载成功：{EXPERT_MODEL_PATH}")
+    except Exception as e:
+        print(f"❌ 加载PPO专家模型失败: {e}")
+        return
+
+    # 生成高质量的专家数据集
+    print(f"\n💡 正在生成高质量专家数据集 (N={DATA_NUM_SAMPLES})...")
+    states, actions = generate_expert_data(expert_agent, env, DATA_NUM_SAMPLES)
+    
+    # 初始化 BC 学生 Agent
+    print(f"\n⚙️ 初始化 BC 学生 Agent...")
+    bc_cfg = BCConfig(epochs=BC_EPOCHS, batch_size=64, lr=0.001)
+    student_agent = BCAgent(obs_dim, act_dim, cfg=bc_cfg)
+    
+
+    visualizer = TrainingVisualizer(save_path=PLOT_SAVE_PATH)
+
+    #  BC 训练循环
+    print(f"\n--- 开始 BC 训练 (共 {BC_EPOCHS} Epochs) ---")
+    
+   
+    states_tensor = torch.FloatTensor(states).to(student_agent.device)
+    actions_tensor = torch.LongTensor(actions).to(student_agent.device)
+    dataset_size = len(states)
+    indices = np.arange(dataset_size)
+    
+    student_agent.model.train() 
+
+    for epoch in range(1, BC_EPOCHS + 1):
+        # --- 训练一个 Epoch ---
+        np.random.shuffle(indices)
         epoch_loss = 0
-        steps = 0
+        batches = 0
         
-        for batch_states, batch_actions in dataloader:
-            # 这里需要转回 numpy 传给 agent (或者你改一下 agent 直接收 tensor 也可以，但为了通用性这里转一下)
-            loss = agent.train_step(batch_states.numpy(), batch_actions.numpy())
-            epoch_loss += loss
-            steps += 1
+        for start_idx in range(0, dataset_size, bc_cfg.batch_size):
+            end_idx = min(start_idx + bc_cfg.batch_size, dataset_size)
+            batch_idx = indices[start_idx:end_idx]
             
-        avg_loss = epoch_loss / steps
-        loss_history.append(avg_loss)
-        print(f"Epoch {epoch+1}/{EPOCHS} | Loss: {avg_loss:.4f}")
-
-    # 保存模型
-    agent.save(MODEL_PATH)
-    print(f"Model saved to {MODEL_PATH}")
-
-    # 画 Loss 图
-    plt.figure()
-    plt.plot(loss_history)
-    plt.title("BC Training Loss (PyTorch)")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.savefig("scores/torch_bc_loss.png")
-    plt.close()
-
-    # ==========================================
-    # 5. 极速并行测试 (Vectorized Evaluation)
-    # ==========================================
-    print(f"\n=== Starting High-Speed Evaluation ({TEST_EPISODES} episodes) ===")
-    
-    # 创建向量化环境 (10个进程同时跑)
-    envs = gym.make_vec(ENV_NAME, num_envs=TEST_NUM_ENVS, vectorization_mode="async")
-    
-    start_time = time.time()
-    
-    states, _ = envs.reset()
-    episode_counts = 0
-    final_scores = []
-    current_scores = np.zeros(TEST_NUM_ENVS)
-
-    while episode_counts < TEST_EPISODES:
-        # A. 批量预测
-        actions = agent.batch_act(states)
-
-        # B. 环境并行执行
-        next_states, rewards, terminations, truncations, _ = envs.step(actions)
-        
-        # === [关键修改] ===
-        # 原来的写法: current_scores += 1 (容易多算一步)
-        # 现在的写法: current_scores += rewards (以环境反馈为准)
-        current_scores += rewards 
-        # =================
-        
-        dones = terminations | truncations
-
-        for i in range(TEST_NUM_ENVS):
-            if dones[i]:
-                # 注意：Gymnasium 的 VectorEnv 在 done 时会自动 reset
-                # 这里的 final_score 就是这一局的最终得分
-                final_scores.append(current_scores[i])
-                episode_counts += 1
-                current_scores[i] = 0 # 重置分数
-                
-        if episode_counts >= TEST_EPISODES:
-            break
+            batch_s = states_tensor[batch_idx]
+            batch_a = actions_tensor[batch_idx]
             
-        states = next_states
+            student_agent.optimizer.zero_grad()
+            logits = student_agent.model(batch_s)
+            loss = student_agent.criterion(logits, batch_a)
+            loss.backward()
+            student_agent.optimizer.step()
+            
+            epoch_loss += loss.item()
+            batches += 1
+        
+        avg_epoch_loss = epoch_loss / batches
 
-    duration = time.time() - start_time
-    envs.close()
+       
+        student_agent.model.eval() # 切换到评估模式
+        current_eval_score = evaluate_bc_agent(student_agent, env, episodes=EVAL_EPISODES)
+        student_agent.model.train() # 切换回训练模式
+        
+        print(f"Epoch {epoch}/{BC_EPOCHS} | Loss: {avg_epoch_loss:.4f} | Eval Score: {current_eval_score:.1f}")
+        
+        visualizer.update(epoch, current_eval_score)
+        visualizer.save_plot() 
 
-    # === 6. 结果可视化 ===
-    avg_score = np.mean(final_scores)
     
-    print("\n" + "="*30)
-    print(f"PyTorch BC Evaluation Results")
-    print("="*30)
-    print(f"Total Episodes: {len(final_scores)}")
-    print(f"Total Time:     {duration:.2f}s")
-    print(f"Speed:          {len(final_scores)/duration:.1f} eps/sec")
-    print(f"Average Score:  {avg_score:.2f}")
-    print("="*30)
-
-    # 画评估结果图
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1, len(final_scores)+1), final_scores, marker='o', linestyle='-', color='#1f77b4', label='BC Agent (Torch)')
-    plt.axhline(y=475, color='r', linestyle='--', label='Threshold (475)')
-    plt.title(f'Evaluation Performance (Avg: {avg_score:.1f})')
-    plt.xlabel('Episode')
-    plt.ylabel('Score')
-    plt.ylim(0, 520)
-    plt.legend()
-    plt.text(len(final_scores)/2, 250, f'Avg: {avg_score:.1f}', 
-             ha='center', bbox=dict(facecolor='white', alpha=0.9))
-    plt.savefig('scores/torch_evaluation.png')
-    print("Evaluation plot saved to scores/torch_evaluation.png")
+    student_agent.save(MODEL_SAVE_PATH)
+    env.close()
+    print(f"\n✅ BC 训练完成！模型已保存至: {MODEL_SAVE_PATH}")
+    print(f"📊 训练进度图已保存至: {PLOT_SAVE_PATH}")
 
 if __name__ == "__main__":
-    train_and_evaluate()
+    os.makedirs("scores", exist_ok=True)
+    os.makedirs("models", exist_ok=True)
+    train_bc_with_visualization()
