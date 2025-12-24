@@ -1,10 +1,3 @@
-"""
-CartPole Training Script (Gymnasium Version)
---------------------------------------------
-Main training loop that runs the CartPole-v1 environment using a DQN agent.
-The training progress is logged and plotted using ScoreLogger.
-"""
-
 from __future__ import annotations
 import os
 import time
@@ -55,17 +48,7 @@ def train(algorithm: str = "doubledqn", terminal_penalty: bool = True):
 
             #基础惩罚
             if terminal_penalty and done and steps < 500:
-                reward = -1.0
-            
-            # # 额外的高分奖励
-            # if done and steps >= 500:
-            #     reward += 2
-                
-
-            # # 在高分段每多活一步，也给点小甜头。
-            # if steps > 400:
-            #     reward += 0.1
-           
+                reward = -1.0   
 
             next_state = np.reshape(next_state_raw, (1, obs_dim))
             agent.step(state, action, reward, next_state, done)
@@ -135,4 +118,5 @@ if __name__ == "__main__":
 
     best_model_path = os.path.join(MODEL_DIR, f"best_{algo_to_run}.torch")
     if os.path.exists(best_model_path):
+
         evaluate(model_path=best_model_path, algorithm=algo_to_run)
