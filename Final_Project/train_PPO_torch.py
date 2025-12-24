@@ -112,55 +112,6 @@ def train_ppo():
     return agent, final_model_path, best_model_full_path
 
 
-# def evaluate(model_path: str, episodes: int = 100, render: bool = False, fps: int = 60):
-#     """
-#     Standard Evaluation Function with Deterministic Policy
-#     """
-#     if model_path is None or not os.path.exists(model_path):
-#         print(f"[Eval Error] Model path not found: {model_path}")
-#         return
-
-#     print(f"\n--- Starting Evaluation: {os.path.basename(model_path)} ---")
-    
-#     render_mode = "human" if render else None
-#     env = gym.make(ENV_NAME, render_mode=render_mode)
-#     obs_dim = env.observation_space.shape[0]
-#     act_dim = env.action_space.n
-
-#     agent = SimplePPO(obs_dim, act_dim)
-#     agent.load_model(model_path)
-    
-#     scores = []
-#     dt = (1.0 / fps) if render and fps else 0.0
-
-#     for ep in range(1, episodes + 1):
-#         state, _ = env.reset(seed=10_000 + ep)
-#         done = False
-#         steps = 0
-        
-#         while not done:
-#             # 关键：评估时使用确定性策略 (Argmax)
-#             state_t = torch.FloatTensor(state).unsqueeze(0).to(agent.actor.net[0].weight.device)
-#             with torch.no_grad():
-#                 probs = agent.actor(state_t).cpu().numpy()[0]
-#             action = np.argmax(probs)
-
-#             next_state, _, terminated, truncated, _ = env.step(action)
-#             done = terminated or truncated
-#             state = next_state
-#             steps += 1
-
-#             if dt > 0: time.sleep(dt)
-
-#         scores.append(steps)
-#         if ep % 10 == 0:
-#             print(f"[Eval] Episode {ep}/{episodes}: steps={steps}")
-
-#     env.close()
-#     avg = float(np.mean(scores))
-#     print(f"[Result] Average Score over {episodes} episodes: {avg:.2f}")
-#     print("-" * 50)
-#     return scores
 def evaluate(model_path: str, episodes: int = 100, render: bool = False, fps: int = 60):
     """
     Standard Evaluation Function with Deterministic Policy and Forced Rendering
@@ -171,7 +122,7 @@ def evaluate(model_path: str, episodes: int = 100, render: bool = False, fps: in
 
     print(f"\n--- Starting Evaluation: {os.path.basename(model_path)} ---")
     
-    # 关键点 1: 设置 render_mode
+    #设置 render_mode
     render_mode = "human" if render else None
     env = gym.make(ENV_NAME, render_mode=render_mode)
     obs_dim = env.observation_space.shape[0]
@@ -189,17 +140,15 @@ def evaluate(model_path: str, episodes: int = 100, render: bool = False, fps: in
         steps = 0
         
         while not done:
-            # 关键点 2: 在循环开始时，强制渲染第一帧
+            # 在循环开始时，强制渲染第一帧
             if render:
                 env.render()
 
-            # ... (选择动作的代码不变) ...
             state_t = torch.FloatTensor(state).unsqueeze(0).to(agent.actor.net[0].weight.device)
             with torch.no_grad():
                 probs = agent.actor(state_t).cpu().numpy()[0]
             action = np.argmax(probs)
 
-            # ... (执行动作的代码不变) ...
             next_state, _, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
             state = next_state
@@ -214,13 +163,12 @@ def evaluate(model_path: str, episodes: int = 100, render: bool = False, fps: in
 
     env.close()
     avg = float(np.mean(scores))
-    print(f"✅ [Result] Average Score over {episodes} episodes: {avg:.2f}")
+    print(f" [Result] Average Score over {episodes} episodes: {avg:.2f}")
     print("-" * 50)
     return scores
 
 if __name__ == "__main__":
-    # 1. 运行训练，并获取路径
-    # 注意：这里会返回两个路径：最终的和最佳的
+    # 运行训练，并获取路径
     trained_agent, final_path, best_path = train_ppo()
     
     print("\n\n" + "="*30)
@@ -234,4 +182,5 @@ if __name__ == "__main__":
     if best_path:
         evaluate(model_path=best_path, episodes=10, render=True)
     else:
+
         print("[Info] No Best Model saved (maybe score never hit threshold).")
