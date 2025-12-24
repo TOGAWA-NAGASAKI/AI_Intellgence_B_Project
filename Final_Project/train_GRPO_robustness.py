@@ -7,26 +7,23 @@ import os
 import config 
 from collections import deque
 
-# 导入 GRPO Agent
 from agents.simple_grpo_torch import SimpleGRPO
 from scores.score_logger import ScoreLogger
 
 ENV_NAME = "CartPole-v1"
-MODEL_DIR = "models"
+MODEL_DIR = "models
 
-# 鲁棒性与攻击设置
-
-# 1. 内部故障模拟 (动作)
+# 动作故障
 ACTION_NOISE_PROB = 0.2     # 动作噪声 (0.1, 0.2)
 
-# 2. 传感器故障模拟 (状态/观测) 
+# 环境噪声
 STATE_NOISE_STD = 0.0       # 状态噪声 (0.01, 0.05)
 
-# 3. 奖励信号干扰
+# 奖励信号干扰
 REWARD_NOISE_STD = 0.0      # 奖励噪声 (1.0)
 SPARSE_REWARD = False       # 稀疏奖励 (True)
 
-# 4. 外部物理攻击 
+# 外部攻击 
 ADVERSARIAL_ATTACK = False  # 对抗性推力开关
 ATTACK_INTERVAL = 150       # 攻击频率
 ATTACK_FORCE = 1.0          # 攻击强度
@@ -39,12 +36,10 @@ class RobustGRPOBatchTrainer:
         
         self.agent = SimpleGRPO(self.observation_space, self.action_space)
         
-        # GRPO 特有的配置
         self.batch_episodes = 16  # 每次采集多少局作为一个 Group
         self.max_steps_per_episode = 3200
         
     def collect_episode(self, episode_idx):
-        # Reset 环境
         state, _ = self.env.reset()
         
         #  初始状态噪声
@@ -67,30 +62,29 @@ class RobustGRPOBatchTrainer:
             
             # 对抗性推力攻击 
             if ADVERSARIAL_ATTACK and step > 0 and step % ATTACK_INTERVAL == 0:
-                # 只在打印日志时偶尔显示，防止刷屏
                 if episode_idx % 10 == 0:
-                   print(f"   ⚠️  Step:{step} -> GRPO 遭受攻击！")
+                   print(f"    Step:{step} -> GRPO 遭受攻击！")
                 
                 current_env_state = list(self.env.unwrapped.state)
                 direction = 1 if np.random.rand() > 0.5 else -1
                 current_env_state[3] += direction * ATTACK_FORCE
                 self.env.unwrapped.state = tuple(current_env_state)
                 
-                # 更新真实的物理状态
+                # 更新物理状态
                 next_state = np.array(current_env_state, dtype=np.float32)
 
-            #  状态/观测噪声 (State Noise)
+            #  环境噪声
             if STATE_NOISE_STD > 0:
                 noise = np.random.normal(0, STATE_NOISE_STD, next_state.shape)
                 next_state += noise
             
-            #  奖励噪声 (Reward Noise)
+            #  奖励噪声 
             if REWARD_NOISE_STD > 0:
                 noise = np.random.normal(0, REWARD_NOISE_STD)
                 reward += noise
-                reward = max(0.1, reward) # 防止负分自杀
+                reward = max(0.1, reward) # 防止负分
             
-            #  稀疏奖励 (Sparse Reward)
+            #  稀疏奖励
             done = terminated or truncated
             if SPARSE_REWARD:
                 if not done:
@@ -111,7 +105,6 @@ class RobustGRPOBatchTrainer:
         return states, actions, rewards
     
     def train_batch(self, num_episodes=config.TOTAL_EPISODES):
-        # --- 生成日志后缀 ---
         suffix = ""
         if ACTION_NOISE_PROB > 0: suffix += f"_ActNoise_{ACTION_NOISE_PROB}"
         if STATE_NOISE_STD > 0: suffix += f"_StateNoise_{STATE_NOISE_STD}"
@@ -123,15 +116,13 @@ class RobustGRPOBatchTrainer:
         logger_name = f"{ENV_NAME}_GRPO{suffix}"
         score_logger = ScoreLogger(logger_name)
         
-        print(f"--- 启动 GRPO 鲁棒性训练: {logger_name} ---")
+        print(f" 启动 GRPO 鲁棒性训练: {logger_name} ")
         print(f"干扰: 动作={ACTION_NOISE_PROB}, 状态={STATE_NOISE_STD}, 奖励={REWARD_NOISE_STD}, 稀疏={SPARSE_REWARD}, 对抗={ADVERSARIAL_ATTACK}")
         
         os.makedirs(MODEL_DIR, exist_ok=True)
         best_score = 0
         scores_window = deque(maxlen=100)
         
-        # 这里的 num_episodes 指的是总共要跑多少个 batch
-        # GRPO 每次更新需要 batch_episodes 局
         total_batches = num_episodes // self.batch_episodes
         if total_batches < 1: total_batches = 1
 
@@ -139,22 +130,19 @@ class RobustGRPOBatchTrainer:
             batch_episodes_data = []
             batch_scores = []
             
-            # 收集一个 Group 的数据
+            # 收集一个Group的数据
             for _ in range(self.batch_episodes):
                 states, actions, rewards = self.collect_episode(batch_idx)
                 batch_episodes_data.append((states, actions, rewards))
                 
-                # GRPO 的分数通常看这一局坚持了多久
                 score = len(rewards)
                 batch_scores.append(score)
                 scores_window.append(score)
             
             batch_avg_score = np.mean(batch_scores)
             
-            # 2. 训练 (Group Relative Update)
             actor_loss, info = self.agent.train_episode_batch(batch_episodes_data)
             
-            # 3. 记录与保存
             score_logger.add_score(int(batch_avg_score), batch_idx * self.batch_episodes)
             
             if batch_avg_score >= best_score:
@@ -176,4 +164,5 @@ class RobustGRPOBatchTrainer:
 
 if __name__ == "__main__":
     trainer = RobustGRPOBatchTrainer()
+
     trainer.train_batch(num_episodes=config.TOTAL_EPISODES)
