@@ -15,41 +15,44 @@ ENV_NAME = "CartPole-v1"
 EXPERT_MODEL_PATH = r"Final_Project\models\best_ppo_ppotorch_score_500.pth"
 
 
-DATA_NUM_SAMPLES = 5000  # 足够多的样本
-BC_EPOCHS = 50          # 训练轮数
-EVAL_EPISODES = 5       # 每个 Epoch 评估的局数
-PLOT_SAVE_PATH = "scores/bc_training_progress_graph.png"
+DATA_NUM_SAMPLES = 5000  
+BC_EPOCHS = 50          
+EVAL_EPISODES = 5       
+GOAL_SCORE = 475        
+
+# 图片保存路径
+SCORE_PLOT_PATH = "scores/bc_training_progress_graph.png" 
+LOSS_PLOT_PATH = "scores/bc_training_loss_graph.png"     
 MODEL_SAVE_PATH = "models/bc_trained_model.pth"
-GOAL_SCORE = 475        # 目标分数线
 
 
-# --- 可视化器类 ---
+
 class TrainingVisualizer:
-    def __init__(self, save_path):
+    def __init__(self, score_path, loss_path):
         self.epochs = []
         self.scores = []
-        self.save_path = save_path
+        self.losses = []  
+        self.score_path = score_path
+        self.loss_path = loss_path
         self.goal = GOAL_SCORE 
 
-    def update(self, epoch, score):
+    def update(self, epoch, score, loss):
         self.epochs.append(epoch)
         self.scores.append(score)
+        self.losses.append(loss) 
 
-    def save_plot(self):
-        if not self.scores:
-            return
+    def save_plots(self):
+       
+        if not self.scores: return
 
+       
         plt.figure(figsize=(10, 6))
-        
-        # 绘制原始分数 
         plt.plot(self.epochs, self.scores, label='Score per Epoch', color='#1f77b4', alpha=0.9)
         
-        # 计算并绘制最近 10 局平均分 (Average of last 10) 
-      
+        # 计算滑动平均 (Last 10)
         moving_avgs = []
         target_window = 10  
-        window_size = min(target_window, len(self.scores)) # 窗口大小不超过当前已有的分数数量
-        
+        window_size = min(target_window, len(self.scores))
         for i in range(len(self.scores)):
             start_idx = max(0, i - window_size + 1)
             subset = self.scores[start_idx : i + 1]
@@ -57,27 +60,43 @@ class TrainingVisualizer:
             
         plt.plot(self.epochs, moving_avgs, label=f'Average of last {target_window}', 
                  color='#ff7f0e', linestyle='--', linewidth=2)
-
-        # 3. 绘制目标线 (绿色点线)
         plt.axhline(y=self.goal, color='green', linestyle=':', label=f'Goal ({self.goal} Avg)', alpha=0.8)
 
-        # 4. 绘制趋势线 (红色点划线)
         if len(self.epochs) > 1:
             z = np.polyfit(self.epochs, self.scores, 1)
             p = np.poly1d(z)
             plt.plot(self.epochs, p(self.epochs), "r-.", label='Trend', linewidth=1.5)
 
-        plt.title(f"{ENV_NAME} - Behavioral Cloning Training Progress")
+        plt.title(f"{ENV_NAME} - BC Training Progress (Scores)")
         plt.xlabel("Training Epochs")
         plt.ylabel("Evaluation Score")
         plt.legend(loc='upper left')
         plt.grid(True, alpha=0.3)
         plt.ylim(0, 520) 
         
-        if not os.path.exists(os.path.dirname(self.save_path)):
-            os.makedirs(os.path.dirname(self.save_path))
-        plt.savefig(self.save_path)
+        if not os.path.exists(os.path.dirname(self.score_path)):
+            os.makedirs(os.path.dirname(self.score_path))
+        plt.savefig(self.score_path)
         plt.close()
+
+    
+        plt.figure(figsize=(10, 6))
+        
+        # 绘制 Loss 曲线
+        plt.plot(self.epochs, self.losses, label='Training Loss', color='#1f77b4', linewidth=2)
+        
+        plt.title(f"BC Training Loss (PyTorch)")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        # plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # 保存 Loss 图
+        if not os.path.exists(os.path.dirname(self.loss_path)):
+            os.makedirs(os.path.dirname(self.loss_path))
+        plt.savefig(self.loss_path)
+        plt.close()
+
 
 # --- 数据生成函数 ---
 def generate_expert_data(expert_agent, env, num_samples):
@@ -119,7 +138,7 @@ def evaluate_bc_agent(student_agent, env, episodes=EVAL_EPISODES):
 def train_bc_with_visualization():
     # 检查专家模型
     if not os.path.exists(EXPERT_MODEL_PATH):
-        print(f"❌ 错误: 找不到专家模型文件: {EXPERT_MODEL_PATH}")
+        print(f"错误: 找不到专家模型文件: {EXPERT_MODEL_PATH}")
         return
 
     # 初始化环境和专家
@@ -130,27 +149,26 @@ def train_bc_with_visualization():
     expert_agent = SimplePPO(obs_dim, act_dim)
     try:
         expert_agent.load_model(EXPERT_MODEL_PATH)
-        print(f"🚀 PPO专家模型加载成功：{EXPERT_MODEL_PATH}")
+        print(f"PPO专家模型加载成功：{EXPERT_MODEL_PATH}")
     except Exception as e:
-        print(f"❌ 加载PPO专家模型失败: {e}")
+        print(f"加载PPO专家模型失败: {e}")
         return
 
     # 生成高质量的专家数据集
-    print(f"\n💡 正在生成高质量专家数据集 (N={DATA_NUM_SAMPLES})...")
+    print(f"\n正在生成高质量专家数据集 (N={DATA_NUM_SAMPLES})...")
     states, actions = generate_expert_data(expert_agent, env, DATA_NUM_SAMPLES)
     
     # 初始化 BC 学生 Agent
-    print(f"\n⚙️ 初始化 BC 学生 Agent...")
+    print(f"\n初始化 BC 学生 Agent...")
     bc_cfg = BCConfig(epochs=BC_EPOCHS, batch_size=64, lr=0.001)
     student_agent = BCAgent(obs_dim, act_dim, cfg=bc_cfg)
     
-
-    visualizer = TrainingVisualizer(save_path=PLOT_SAVE_PATH)
+    # 初始化可视化器 (传入两个路径)
+    visualizer = TrainingVisualizer(score_path=SCORE_PLOT_PATH, loss_path=LOSS_PLOT_PATH)
 
     #  BC 训练循环
     print(f"\n--- 开始 BC 训练 (共 {BC_EPOCHS} Epochs) ---")
     
-   
     states_tensor = torch.FloatTensor(states).to(student_agent.device)
     actions_tensor = torch.LongTensor(actions).to(student_agent.device)
     dataset_size = len(states)
@@ -182,21 +200,23 @@ def train_bc_with_visualization():
         
         avg_epoch_loss = epoch_loss / batches
 
-       
+        # --- 评估 ---
         student_agent.model.eval() # 切换到评估模式
         current_eval_score = evaluate_bc_agent(student_agent, env, episodes=EVAL_EPISODES)
         student_agent.model.train() # 切换回训练模式
         
         print(f"Epoch {epoch}/{BC_EPOCHS} | Loss: {avg_epoch_loss:.4f} | Eval Score: {current_eval_score:.1f}")
         
-        visualizer.update(epoch, current_eval_score)
-        visualizer.save_plot() 
+        
+        visualizer.update(epoch, current_eval_score, avg_epoch_loss)
+        visualizer.save_plots() 
 
     
     student_agent.save(MODEL_SAVE_PATH)
     env.close()
-    print(f"\n✅ BC 训练完成！模型已保存至: {MODEL_SAVE_PATH}")
-    print(f"📊 训练进度图已保存至: {PLOT_SAVE_PATH}")
+    print(f"\nBC 训练完成！模型已保存至: {MODEL_SAVE_PATH}")
+    print(f"进度图已保存至: {SCORE_PLOT_PATH}")
+    print(f"Loss图已保存至: {LOSS_PLOT_PATH}")
 
 if __name__ == "__main__":
     os.makedirs("scores", exist_ok=True)
